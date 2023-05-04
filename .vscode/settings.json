@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "sdl.h": "c",
+        "raylib.h": "c",
+        "raymath.h": "c",
+        "chrono": "c",
+        "cmath": "c",
+        "complex": "c",
+        "cstdlib": "c",
+        "stdbool.h": "c"
+    }
+}

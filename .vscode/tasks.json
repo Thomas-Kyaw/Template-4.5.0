@@ -1,0 +1,101 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "main",
+            "type": "shell",
+            "command": "clang",
+            "args": [
+                "-g",
+				"${workspaceFolder}/src/main.c",
+				"-o",
+				"${workspaceFolder}/bin/main",
+                "-I${workspaceFolder}/lib/",
+                "-L${workspaceFolder}/lib",
+                "-lraylib","-lraylib",
+                "-framework",
+                "Cocoa",
+                "-framework",
+                "OpenGL",
+                "-framework",
+                "IOKit",
+                "-framework",
+                "CoreVideo",
+            ],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+        },
+        {
+            "label": "test",
+            "type": "shell",
+            "command": "clang",
+            "args": [
+                "-g",
+				"${workspaceFolder}/src/test.c",
+				"-o",
+				"${workspaceFolder}/bin/test",
+                "-I${workspaceFolder}/lib/",
+                "-L${workspaceFolder}/lib",
+                "-lraylib","-lraylib",
+                "-framework",
+                "Cocoa",
+                "-framework",
+                "OpenGL",
+                "-framework",
+                "IOKit",
+                "-framework",
+                "CoreVideo",
+            ],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+        },
+        {
+            "label": "game",
+            "type": "shell",
+            "command": "clang",
+            "args": [
+                "-g",
+				"${workspaceFolder}/src/game.c",
+				"-o",
+				"${workspaceFolder}/bin/game",
+                "-I${workspaceFolder}/lib/",
+                "-L${workspaceFolder}/lib",
+                "-lraylib","-lraylib",
+                "-framework",
+                "Cocoa",
+                "-framework",
+                "OpenGL",
+                "-framework",
+                "IOKit",
+                "-framework",
+                "CoreVideo",
+            ],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+        }
+    ]
+}
