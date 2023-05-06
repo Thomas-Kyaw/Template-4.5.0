@@ -1,233 +1,121 @@
 #include "raylib.h"
-#include "raymath.h"
-#include<stdlib.h>
-#include<stdbool.h>
-#include<stdio.h>
-#include <math.h>
+#include "math.h"
 
-// Global Variables
+//tile collision types
+#define EMPTY 0
+#define BLOCK 1
+typedef struct{
+    float x;
+    float y;
+    int w;      // width
+    int h;      // height
+    int s;      // cell size (square cells)
+    int *cell;  // array of tiles
+}Grid;
 
-#define MAP_W 20
-#define MAP_H 12
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 384
-#define CHAR_WIDTH 32
-#define CHAR_HEIGHT 32
+// List of Rectangles to check for a collision.
+typedef struct{
+    Rectangle *rect;
+    int size;
+}RectList;
 
 typedef struct Player {
     Texture2D run_animation;
     Texture2D idle_animation;
-    Texture2D jump_animation;
-    Texture2D double_jump_animation;
     Vector2 position;
+    const float maxSpeed;
+    const float acceleration;
     Vector2 velocity;
     float speed;
     bool is_moving;
-    bool is_jumping;
 } Player;
 
-typedef struct wall{
-    float position_x;
-    float position_y;
-    int width;
-    int height;
-    int *cell;
-    int cell_size;
-}Wall;
-void DrawTileMap(Texture2D wall);
-
-void DrawTileGrid();
-
-void DrawCoins();
-
-void player_update();
-
-void UpdateCoin();
-
+void GameInit();
+void GameUpdate();
+void GameDraw();
+void GameLoop(){GameUpdate(); GameDraw();}
 void Reset();
 
-Wall map;
-Player player;
+void DrawTileGrid();
+void DrawTileMap();
+void DrawCoins();
+void DrawPlayer();
+void DrawScoreText();
 
-#define COIN_COUNT 106
+void UpdateScreen();
+void UpdatePlayer();
+void UpdateCoin();
+
+void        RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity);
+Rectangle   RectangleResize(Rectangle *rect, Vector2 *size);
+RectList*   RectangleListFromTiles(Rectangle *rect, Grid *grid);
+void        RectangleTileCollision(Rectangle *rect, Vector2 *velocity, RectList *list);
+
+#define MAP_W 20
+#define MAP_H 12
+int screenWidth = 32*MAP_W;
+int screenHeight = 32*MAP_H;
+const int gameWidth = 32*MAP_W;
+const int gameHeight = 32*MAP_H;
+
+Rectangle player = {32.0f * 2, 32.0f * 8, 32.0f, 32.0f};
+
+#define COIN_COUNT 165
 Rectangle coins[COIN_COUNT] = {0};
 bool visible[COIN_COUNT] = {0};
 int points = 0;
-int time_a = 0;       // For animation 
+int time_a = 0;       // For animation
 
+Grid map;
 int tiles[] = {
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1,
-            1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-            1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 1,
-            1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-            1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-};
-Rectangle frames[12] = {
-            { 0, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*2, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*3, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*4, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*5, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*6, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*7, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*8, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*9, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*10, 0, CHAR_WIDTH, CHAR_HEIGHT },
-            { CHAR_WIDTH*11, 0, CHAR_WIDTH, CHAR_HEIGHT }
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,1,
+1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,1,
+1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
 };
 
-void DrawStartScreen(bool* game_running)
-{
-    Music bing_chilling_song = LoadMusicStream("assets/Oogway_Ascends.mp3");
-    PlayMusicStream(bing_chilling_song);
-    SetMusicVolume(bing_chilling_song, 0.5f);
-    bool playing_music = true;
-
-    while (*game_running)
-    {
-        // Check for quit button press
-        if (WindowShouldClose())
-        {
-            *game_running = false;
-            break;
-        }
-
-        if (IsKeyPressed(KEY_ENTER)) 
-            break;
-
-        if (IsKeyPressed(KEY_SPACE))
-        {
-            if (playing_music){
-                PauseMusicStream(bing_chilling_song);
-                playing_music = false;
-            }
-            else{
-                ResumeMusicStream(bing_chilling_song);
-                playing_music = true;
-            }
-        }
-
-        // Update music stream
-        UpdateMusicStream(bing_chilling_song);
-
-        BeginDrawing();
-        ClearBackground(BLACK);
-
-        DrawText("Press ENTER to start game", GetScreenWidth()/2 - MeasureText("Press ENTER to start game", 20)/2, GetScreenHeight()/2 - 50, 20, WHITE);
-        DrawText("Press SPACE to pause/resume music", 10, 420, 20, MAROON);
-        DrawText("-Music-", 720, 400, 20, RAYWHITE);
-        DrawText("Oogway Ascends by Hams Zimmer", 562, 430, 15, RAYWHITE);
-            
-        EndDrawing();
-    }
-}
-
-void game_over(bool* game_running, int score){
-    Music game_over_sad_song = LoadMusicStream("assets/game_over.mp3");
-    PlayMusicStream(game_over_sad_song);
-    SetMusicVolume(game_over_sad_song, 1);
-    while(*game_running){
-        while(!WindowShouldClose()){
-            *game_running = false;
-            break;
-        }
-        UpdateMusicStream(game_over_sad_song);
-        BeginDrawing();
-        ClearBackground(BLACK);
-
-        DrawText("Game Over", GetScreenWidth()/2 - MeasureText("Game Over",30)/2, GetScreenHeight()/2 - 50, 30, WHITE);
-
-        EndDrawing();
-    }  
-}
-
-int main(void)
-{
-    // Initialization
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Sprite Test");
-    InitAudioDevice();
+int main(void){
+    GameInit();
     SetTargetFPS(60);
-
-    player.run_animation = LoadTexture("assets/Run(32x32).png");
-    player.idle_animation = LoadTexture("assets/Idle(32x32).png");
-   Texture2D wall = LoadTexture("assets/Tile_72.png");
-
-// Define animation variables
-int currentFrame = 0;
-int frameCounter = 0;
-int frameSpeed = 5;
-
-// Disable ESC key quit
-SetExitKey(KEY_NULL);
-
-bool game_running = true;
-
-
-bool can_double_jump = false;
-int num_jumps = 0;
-
-map.position_x = 0.0f;
-map.position_y = 0.0f;
-map.width = 20;
-map.height = 12;
-map.cell_size = 32;
-// Allocate memory for the cell array
-map.cell = (int*) malloc(sizeof(int) * map.width * map.height);
-// Initialize cell values
-for (int i = 0; i < map.width * map.height; i++) {
-    map.cell[i] = tiles[i]; // Set all cells to 0 initially
-}
-
-DrawStartScreen(&game_running);
-Reset();
-
-// Main game loop
-while (game_running && !WindowShouldClose())
-{   
-    
-    // Update animation frame
-    frameCounter++;
-    if (frameCounter >= frameSpeed)
-    {
-        frameCounter = 0;
-        currentFrame++;
-        if (currentFrame > 11) 
-            currentFrame = 0;
+    Player* player = (Player*)malloc(sizeof(Player));
+    // Load sprite sheet texture
+    player->run_animation = LoadTexture("assets/Run(32x32).png");
+    player->idle_animation = LoadTexture("assets/Idle(32x32).png");
+    while (!WindowShouldClose()){
+        GameLoop();
     }
-    // Draw current animation frame and character position
-    BeginDrawing();
-    ClearBackground(RAYWHITE);
-    DrawTileGrid();  
-    DrawTileMap(wall);  
-    DrawCoins();
-    EndDrawing();
-} 
-
-    // Cleanup
-    // Free the memory allocated for the cell array
-    free(map.cell);
-    CloseAudioDevice();
     CloseWindow();
-
     return 0;
 }
+
+void GameInit() {
+    InitWindow(screenWidth, screenHeight, "classic game: platformer");
+    map.x = 0.0f;
+    map.y = 0.0f;
+    map.w = MAP_W;
+    map.h = MAP_H;
+    map.s = 32;
+    map.cell = tiles;
+    Reset();
+}
+
 void Reset(){
     const float s = 32.0f;
-    //player = (Rectangle){s * 2, s * 6, s, s};
+    player = (Rectangle){s * 2, s * 6, s, s};
     points = 0;
     time_a = 0;
 
     // Place coins on empty tiles
     int count = 0;
-    for (int i = 0; i <  MAP_W * MAP_H; i++) {
+    for (int i = 0; i < MAP_W * MAP_H; i++) {
         if (tiles[i] == 0){
             coins[count] = (Rectangle){(i % MAP_W) * s + s / 2 - 5, (i / MAP_W) * s + s / 2 - 5, 10.0f, 10.0f};
             visible[count] = true;
@@ -239,82 +127,276 @@ void Reset(){
     }
 }
 
-void DrawTileMap(Texture2D wall){
-    for (int y = 0; y < map.height; y++){
-        for (int x = 0; x < map.width; x++){
-            int cell_index = x + y * map.width;
-            int tile_type = map.cell[cell_index];
-            if (tiles[cell_index] == 1){
-                float cell_x = map.position_x + (map.cell_size * x);
-                float cell_y = map.position_y + (map.cell_size * y);
-                Rectangle dest = {(int)cell_x, (int)cell_y, map.cell_size, map.cell_size};
-                DrawTextureRec(wall, dest, (Vector2){cell_x, cell_y}, WHITE);
+void GameUpdate(){
+    UpdatePlayer();
+    UpdateCoin();
+}
+
+void UpdatePlayer(){
+    const float maxSpd = 6.0f;
+    const float acc = 0.1f;
+    static int dirX = 0;
+    static int dirY = 0;
+    static Vector2 vel = {0};
+      
+    // INPUT
+    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
+    dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
+    
+    // player 
+    vel.x += (dirX * maxSpd - vel.x) * acc;
+    if (vel.x < -maxSpd){
+        vel.x = -maxSpd;
+    }
+    else if (vel.x > maxSpd){
+        vel.x = maxSpd;
+    }
+
+    vel.y += (dirY * maxSpd - vel.y) * acc;
+    if (vel.y < -maxSpd){
+        vel.y = -maxSpd;
+    }
+    else if (vel.y > maxSpd){
+        vel.y = maxSpd;
+    }
+    RectangleCollisionUpdate(&player, &vel);
+    //player.x += vel.x;
+    //player.y += vel.y;
+}
+
+void UpdateCoin(){
+    for (int i = 0; i < COIN_COUNT; i++){
+        if (visible[i]){
+            if (CheckCollisionRecs(coins[i], player)){
+                visible[i] = false;
+                points += 1;
+            }
         }
     }
+    
+    if (IsKeyPressed(KEY_ENTER)){
+        Reset();
+    }
 }
+
+void GameDraw(){
+    
+    // Render game's viewport
+        DrawRectangle(0, 0, gameWidth, gameHeight, SKYBLUE); // Background
+        DrawTileMap();
+        DrawTileGrid();
+        DrawScoreText();
+        DrawCoins();
+        DrawPlayer();
+    
+    // Draw the viewport
+    BeginDrawing();
+        ClearBackground(BLACK);
+        DrawRectangle(0, 0, gameWidth, gameHeight, SKYBLUE); // Background
+        DrawTileMap();
+        DrawTileGrid();
+        DrawScoreText();
+        DrawCoins();
+        DrawPlayer();
+    EndDrawing();
+}
+
+void DrawTileMap(){
+    for (int y = 0; y < map.h; y++){
+        for (int x = 0; x < map.w; x++){
+            int i = x + y * map.w;
+            int tile = map.cell[i];
+            if (tile){
+                float cellX = (map.x + map.s * x);
+                float cellY = (map.y + map.s * y);
+                DrawRectangle((int)cellX, (int)cellY, map.s, map.s, LIME);
+                // check tile above
+                if (i - map.w >= 0 && !map.cell[i - map.w]){
+                    DrawLineEx((Vector2){cellX, cellY + 3}, (Vector2){cellX + map.s, cellY + 3}, 6.0f, GREEN);
+                }
+            }
+        }
+    }
 }
 
 void DrawTileGrid(){
-     Color gridColor = (Color){0,0,255,255};
+    Color c = (Color){255,255,255,25};
     
-    for (int y = 0; y < map.height + 1; y++){
-        int startX = map.position_x;
-        int endX = map.position_x + map.width * map.cell_size;
-        int currentY = map.position_y + map.cell_size * y;
-        DrawLine(startX, currentY, endX, currentY, gridColor);
+    for (int y = 0; y < map.h + 1; y++){
+        int x1 = map.x;
+        int x2 = map.x + map.w * map.s;
+        int Y = map.y + map.s * y;
+        DrawLine(x1, Y, x2, Y, c);
     }
-    for (int x = 0; x < map.width + 1; x++){
-        int startY = map.position_y;
-        int endY = map.position_y + map.height * map.cell_size;
-        int currentX = map.position_x + map.cell_size * x;
-        DrawLine(currentX, startY, currentX, endY, gridColor);
+    for (int x = 0; x < map.w + 1; x++){
+        int y1 = map.y;
+        int y2 = map.y + map.h * map.s;
+        int X = map.x + map.s * x;
+        DrawLine(X, y1, X, y2, c);
     }
 }
 
+void DrawPlayer(){
+    DrawRectangle((int)player.x, (int)player.y, (int)player.width, (int)player.height, WHITE);
+    DrawRectangleLinesEx(player, 2, BLACK);
+    
+    // Artistic touch
+    static int dirX = 0;
+    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * 4;
+    Vector2 L1 = (Vector2){player.x + 12 + dirX, player.y + 4};
+    Vector2 R1 = (Vector2){player.x + 20 + dirX, player.y + 4};
+    Vector2 L2 = L1;
+    L2.y += 8;
+    Vector2 R2 = R1;
+    R2.y += 8;
+    DrawLineEx(L1, L2, 2.0f, BLACK);
+    DrawLineEx(R1, R2, 2.0f, BLACK);
+}
+
 void DrawCoins(){
-    for (int i = 0; i < COIN_COUNT; i++){
-        if (visible[i]){
-            bool drawCoin = true;
-            for (int j = 0; j < 240; j++) {
-                if (tiles[j] == 0 && CheckCollisionRecs(coins[i], (Rectangle){j % 20 * 32, j / 20 * 32, 32, 32})) {
-                    drawCoin = false;
-                    break;
+    time_a += 1;
+
+    for (int j = 0; j < COIN_COUNT; j++) {
+        if (visible[j]) {
+            Rectangle c = coins[j];
+            int i = (int)(c.y / map.s) * MAP_W + (int)(c.x / map.s);
+            if (tiles[i] == 0) {
+                float x = (float)((i % MAP_W) * map.s);
+                float y = (float)((i / MAP_W) * map.s);
+
+                float coin_x = x + map.s / 2 - c.width / 2;
+                float coin_y = y + map.s / 2 - c.height / 2;
+                    float coin_y_offset = (float)sin(2 * PI * (time_a / 60.0f * 0.5) + (coin_x * 5)) * 4;
+                    float coin_x_offset = (float)sin(2 * PI * (time_a / 60.0f * 2)) * 4;
+                    DrawRectangle((int)(coin_x + 4 + coin_x_offset * 0.5), (int)(coin_y + coin_y_offset), (int)(c.width - 4 - coin_x_offset), (int)c.height, GOLD);
                 }
-            }
-            if (drawCoin) {
-                DrawRectangle(coins[i].x, coins[i].y, coins[i].width, coins[i].height, YELLOW);
-            }
         }
     }
 }
 
 
-void player_update(){
-    const float maxSpeed = 6.0f;
-    const float acceleration = 0.1f;
-    static int x_direction = 0;
-    static int y_direction = 0;
-    static Vector2 velocity = {0};
+void DrawScoreText(){
+    const char *text;
+    if (points == COIN_COUNT){
+        text = TextFormat("Pres 'ENTER' to restart!");
+    }
+    else{
+        text = TextFormat("Score: %d", points);
+    }
+    
+    const int size = 24;
+    int x = gameWidth /2 - MeasureText(text, size) / 2;
+    int y = 48;
+    
+    DrawText(text, x, y+1, size, BLACK);
+    DrawText(text, x, y, size, WHITE);
+    
+}
 
-    x_direction = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
-    y_direction = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
+void RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity){
+    Rectangle colArea = RectangleResize(rect, velocity);
+    RectList *tiles = RectangleListFromTiles(&colArea, &map);
+    
+    RectangleTileCollision(rect, velocity, tiles);
+    // free allocated RectList memory
+    MemFree(tiles->rect);
+    MemFree(tiles);
+}
 
-    //pressing D and A speed
-    velocity.x += (x_direction * maxSpeed - velocity.x) * acceleration;
-    if(velocity.x < -maxSpeed){
-        velocity.x = -maxSpeed;
+Rectangle RectangleResize(Rectangle *rect, Vector2 *size){
+    Rectangle r = (Rectangle){
+        size->x > 0 ? rect->x : rect->x + size->x,
+        size->y > 0 ? rect->y : rect->y + size->y,
+        size->x > 0 ? rect->width + size->x : rect->width - size->x,
+        size->y > 0 ? rect->height + size->y : rect->height - size->y
+        };
+    return r;
+}
+
+RectList* RectangleListFromTiles(Rectangle *rect, Grid *grid){
+    float offX = rect->x - grid->x;
+    float offY = rect->y - grid->y;
+    float offXw = rect->x - grid->x + rect->width;
+    float offYh = rect->y - grid->y + rect->height;
+    // compensate flooring
+    if (offX < 0.0f){offX -= grid->s;}
+    if (offY < 0.0f){offY -= grid->s;}
+    if (offXw < 0.0f){offXw -= grid->s;}
+    if (offYh < 0.0f){offYh -= grid->s;}
+    
+    // grid coordinates
+    int X = (int)(offX / grid->s);
+    int Y = (int)(offY / grid->s);
+    int sizeX = (int)(offXw / grid->s) - X + 1;
+    int sizeY = (int)(offYh / grid->s) - Y + 1;
+    
+    RectList *list = MemAlloc(sizeof(RectList));
+    list->rect = MemAlloc(sizeof(Rectangle) * sizeX * sizeY);
+    list->size = 0;
+    
+    for (int y = Y; y < Y + sizeY; y++){
+        if (y >= 0 && y < grid->h){
+            for (int x = X; x < X + sizeX; x++){
+                if (x >= 0 && x < grid->w){
+                    int tile = grid->cell[x + y * grid->w];
+                    if (tile){
+                        list->rect[list->size] = (Rectangle){
+                            grid->x + x * grid->s,
+                            grid->y + y * grid->s,
+                            grid->s,
+                            grid->s
+                            };
+                        list->size += 1;
+                    }
+                }
+            }
+        }
     }
-    else if(velocity.x > maxSpeed){
-        velocity.x = maxSpeed;
+    return list;
+}
+
+void RectangleTileCollision(Rectangle *rect, Vector2 *velocity, RectList *list){
+    Rectangle *a = rect;
+    Rectangle *b;
+    Rectangle c = (Rectangle){a->x + velocity->x, a->y, a->width, a->height};
+    
+    // Solve X axis separately
+    for (int i = 0; i < list->size; i++){
+        b = &list->rect[i]; // next collision Rectangle
+        if (CheckCollisionRecs(c, *b)) {
+            // moving to the right
+            if (velocity->x > 0.0f) {
+                // adjust velocity 
+                velocity->x = (b->x - a->width) - a->x;
+            }
+            // moving to the left
+            else if (velocity->x < 0.0f) {
+                velocity->x = (b->x + b->width) - a->x;
+            }
+        }
     }
-    //pressing W and S speed
-    velocity.y += (y_direction * maxSpeed - velocity.y) * acceleration;
-    if(velocity.y < -maxSpeed){
-        velocity.y = -maxSpeed;
+    // set C to resolved X position
+    c.x = a->x + velocity->x;
+    
+    // move on Y axis
+    // set C on test Y position
+    c.y += velocity->y;
+    for (int i = 0; i < list->size; i++){
+        b = &list->rect[i];
+        if (CheckCollisionRecs(c, *b)) {
+            // moving down
+            if (velocity->y > 0.0f) {
+                velocity->y = (b->y - a->height) - a->y;
+            }
+            // moving up
+            else if (velocity->y < 0.0f) {
+                velocity->y = (b->y + b->height) - a->y;
+            }
+        }
     }
-    else if(velocity.y > maxSpeed){
-        velocity.y = maxSpeed;
-    }
-    //player collision with walls
+    
+    rect->x += velocity->x;
+    
+    rect->y += velocity->y;
 }
 
