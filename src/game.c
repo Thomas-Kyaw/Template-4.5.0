@@ -1,9 +1,13 @@
 #include "raylib.h"
-#include "math.h"
-
+#include <math.h>
+#include <stdlib.h>
 //tile collision types
 #define EMPTY 0
 #define BLOCK 1
+
+#define CHAR_WIDTH 32
+#define CHAR_HEIGHT 32
+
 typedef struct{
     float x;
     float y;
@@ -22,29 +26,31 @@ typedef struct{
 typedef struct Player {
     Texture2D run_animation;
     Texture2D idle_animation;
+    Vector2 direction;
     Vector2 position;
-    const float maxSpeed;
-    const float acceleration;
+    float maxSpeed;
+    float acceleration;
     Vector2 velocity;
     float speed;
     bool is_moving;
+    Rectangle frames[12];
 } Player;
 
-void GameInit();
-void GameUpdate();
-void GameDraw();
-void GameLoop(){GameUpdate(); GameDraw();}
-void Reset();
+void GameInit(Player *player);
+void GameUpdate(Player *player, int current_frame);
+void GameDraw(Player *player, int current_frame);
+//void GameLoop(){GameUpdate(); GameDraw();}
+void Reset(Player *player);
 
 void DrawTileGrid();
 void DrawTileMap();
 void DrawCoins();
-void DrawPlayer();
+void DrawPlayer(Player *player, int current_frame);
 void DrawScoreText();
 
 void UpdateScreen();
-void UpdatePlayer();
-void UpdateCoin();
+void UpdatePlayer(Player *player, int current_frame);
+void UpdateCoin(Player *player);
 
 void        RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity);
 Rectangle   RectangleResize(Rectangle *rect, Vector2 *size);
@@ -83,33 +89,60 @@ int tiles[] = {
 };
 
 int main(void){
-    GameInit();
-    SetTargetFPS(60);
     Player* player = (Player*)malloc(sizeof(Player));
-    // Load sprite sheet texture
-    player->run_animation = LoadTexture("assets/Run(32x32).png");
-    player->idle_animation = LoadTexture("assets/Idle(32x32).png");
+    // Define animation variables
+    int currentFrame = 0;
+    int frameCounter = 0;
+    int frameSpeed = 5;
+    GameInit(player);
+    SetTargetFPS(60);
     while (!WindowShouldClose()){
-        GameLoop();
+        // Update animation frame
+        frameCounter++;
+        if (frameCounter >= frameSpeed)
+        {
+            frameCounter = 0;
+            currentFrame++;
+            if (currentFrame > 11) 
+                currentFrame = 0;
+        }
+        GameUpdate(player, currentFrame);
+        GameDraw(player, currentFrame);
     }
     CloseWindow();
     return 0;
 }
 
-void GameInit() {
+void GameInit(Player* player) {
     InitWindow(screenWidth, screenHeight, "classic game: platformer");
+    player->position.x = map.s;
+    player->position.y = map.s;
+    player->frames[0] = (Rectangle){ 0, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[1] = (Rectangle){ CHAR_WIDTH, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[2] = (Rectangle){ CHAR_WIDTH*2, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[3] = (Rectangle){ CHAR_WIDTH*3, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[4] = (Rectangle){ CHAR_WIDTH*4, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[5] = (Rectangle){ CHAR_WIDTH*5, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[6] = (Rectangle){ CHAR_WIDTH*6, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[7] = (Rectangle){ CHAR_WIDTH*7, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[8] = (Rectangle){ CHAR_WIDTH*8, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[9] = (Rectangle){ CHAR_WIDTH*9, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[10] = (Rectangle){ CHAR_WIDTH*10, 0, CHAR_WIDTH, CHAR_HEIGHT };
+    player->frames[11] = (Rectangle){ CHAR_WIDTH*11, 0, CHAR_WIDTH, CHAR_HEIGHT };
     map.x = 0.0f;
     map.y = 0.0f;
     map.w = MAP_W;
     map.h = MAP_H;
     map.s = 32;
     map.cell = tiles;
-    Reset();
+    Reset(player);
 }
 
-void Reset(){
+void Reset(Player *player){
     const float s = 32.0f;
-    player = (Rectangle){s * 2, s * 6, s, s};
+    player->position.x = map.s;
+    player->position.y = map.s;
+    //player = (Rectangle){s * 2, s * 6, s, s};
     points = 0;
     time_a = 0;
 
@@ -127,12 +160,12 @@ void Reset(){
     }
 }
 
-void GameUpdate(){
-    UpdatePlayer();
-    UpdateCoin();
+void GameUpdate(Player *player, int current_frame){
+    UpdatePlayer(player, current_frame);
+    UpdateCoin(player);
 }
 
-void UpdatePlayer(){
+/*void UpdatePlayer(){
     const float maxSpd = 6.0f;
     const float acc = 0.1f;
     static int dirX = 0;
@@ -162,12 +195,45 @@ void UpdatePlayer(){
     RectangleCollisionUpdate(&player, &vel);
     //player.x += vel.x;
     //player.y += vel.y;
+}*/
+
+void UpdatePlayer(Player* player, int current_frame){
+    const float maxSpd = 6.0f;
+    const float acc = 0.1f;
+    static int dirX = 0;
+    static int dirY = 0;
+    static Vector2 vel = {0};
+      
+    // INPUT
+    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
+    dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
+    
+    // player 
+    vel.x += (dirX * maxSpd - vel.x) * acc;
+    if (vel.x < -maxSpd){
+        vel.x = -maxSpd;
+    }
+    else if (vel.x > maxSpd){
+        vel.x = maxSpd;
+    }
+
+    vel.y += (dirY * maxSpd - vel.y) * acc;
+    if (vel.y < -maxSpd){
+        vel.y = -maxSpd;
+    }
+    else if (vel.y > maxSpd){
+        vel.y = maxSpd;
+    }
+    RectangleCollisionUpdate(&(player->frames[current_frame]), &vel);
+    //player->position.x += vel.x;
+    //player->position.y += vel.y;
 }
 
-void UpdateCoin(){
+void UpdateCoin(Player *player){
     for (int i = 0; i < COIN_COUNT; i++){
+        for(int j = 0;j < 12;j++)
         if (visible[i]){
-            if (CheckCollisionRecs(coins[i], player)){
+            if (CheckCollisionRecs(coins[i], player->frames[j])){
                 visible[i] = false;
                 points += 1;
             }
@@ -175,20 +241,11 @@ void UpdateCoin(){
     }
     
     if (IsKeyPressed(KEY_ENTER)){
-        Reset();
+        Reset(player);
     }
 }
 
-void GameDraw(){
-    
-    // Render game's viewport
-        DrawRectangle(0, 0, gameWidth, gameHeight, SKYBLUE); // Background
-        DrawTileMap();
-        DrawTileGrid();
-        DrawScoreText();
-        DrawCoins();
-        DrawPlayer();
-    
+void GameDraw(Player* player, int current_frame){   
     // Draw the viewport
     BeginDrawing();
         ClearBackground(BLACK);
@@ -197,7 +254,7 @@ void GameDraw(){
         DrawTileGrid();
         DrawScoreText();
         DrawCoins();
-        DrawPlayer();
+        DrawPlayer(player,current_frame);
     EndDrawing();
 }
 
@@ -236,8 +293,8 @@ void DrawTileGrid(){
     }
 }
 
-void DrawPlayer(){
-    DrawRectangle((int)player.x, (int)player.y, (int)player.width, (int)player.height, WHITE);
+/*void DrawPlayer(Player* player){
+    DrawRectangle((int)player->position.x, (int)player->position.y, CHAR_WIDTH, CHAR_HEIGHT, WHITE);
     DrawRectangleLinesEx(player, 2, BLACK);
     
     // Artistic touch
@@ -251,6 +308,18 @@ void DrawPlayer(){
     R2.y += 8;
     DrawLineEx(L1, L2, 2.0f, BLACK);
     DrawLineEx(R1, R2, 2.0f, BLACK);
+}*/
+
+void DrawPlayer(Player* player, int currentFrame){
+    // Load sprite sheet texture
+    player->run_animation = LoadTexture("assets/Run(32x32).png");
+    player->idle_animation = LoadTexture("assets/Idle(32x32).png");
+   //if(player->is_moving){
+        DrawTextureRec(player->run_animation, player->frames[currentFrame], player->position, WHITE);
+    //}
+    /*else if(player->is_moving){
+        DrawTextureRec(player->idle_animation, player->frames[currentFrame], player->position, WHITE);
+    }*/
 }
 
 void DrawCoins(){
