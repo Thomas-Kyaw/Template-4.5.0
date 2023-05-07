@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include "raymath.h"
 #include <math.h>
 #include <stdlib.h>
 //tile collision types
@@ -52,7 +53,7 @@ void UpdateScreen();
 void UpdatePlayer(Player *player, int current_frame);
 void UpdateCoin(Player *player);
 
-void        RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity);
+void RectangleCollisionUpdate(Rectangle *rect, Rectangle *frame, float spriteWidth, float spriteHeight, Vector2 *velocity);
 Rectangle   RectangleResize(Rectangle *rect, Vector2 *size);
 RectList*   RectangleListFromTiles(Rectangle *rect, Grid *grid);
 void        RectangleTileCollision(Rectangle *rect, Vector2 *velocity, RectList *list);
@@ -142,7 +143,6 @@ void Reset(Player *player){
     const float s = 32.0f;
     player->position.x = map.s;
     player->position.y = map.s;
-    //player = (Rectangle){s * 2, s * 6, s, s};
     points = 0;
     time_a = 0;
 
@@ -200,34 +200,28 @@ void GameUpdate(Player *player, int current_frame){
 void UpdatePlayer(Player* player, int current_frame){
     const float maxSpd = 6.0f;
     const float acc = 0.1f;
-    static int dirX = 0;
-    static int dirY = 0;
     static Vector2 vel = {0};
       
     // INPUT
-    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
-    dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
+    Vector2 dir = {IsKeyDown(KEY_D) - IsKeyDown(KEY_A), IsKeyDown(KEY_S) - IsKeyDown(KEY_W)};
+    float dir_len = Vector2Length(dir);
+    if (dir_len > 0) {
+        player->is_moving = true;
+        dir = Vector2Divide(dir, (Vector2){dir_len, dir_len});  // Normalize direction vector
+    } else {
+        player->is_moving = false;
+    }
     
     // player 
-    vel.x += (dirX * maxSpd - vel.x) * acc;
-    if (vel.x < -maxSpd){
-        vel.x = -maxSpd;
+    Vector2 acc_dir = Vector2Multiply(dir, (Vector2){acc, acc});
+    vel = Vector2Add(vel, acc_dir);
+    if (Vector2Length(vel) > maxSpd) {
+        vel = Vector2Multiply(Vector2Normalize(vel), (Vector2){maxSpd, maxSpd});  // Cap velocity magnitude
     }
-    else if (vel.x > maxSpd){
-        vel.x = maxSpd;
-    }
-
-    vel.y += (dirY * maxSpd - vel.y) * acc;
-    if (vel.y < -maxSpd){
-        vel.y = -maxSpd;
-    }
-    else if (vel.y > maxSpd){
-        vel.y = maxSpd;
-    }
-    RectangleCollisionUpdate(&(player->frames[current_frame]), &vel);
-    player->position.x += vel.x;
-    player->position.y += vel.y;
+    
+   RectangleCollisionUpdate(&(player->position), &(player->frames[current_frame]), player->frames[current_frame].width, player->frames[current_frame].height, &vel);
 }
+
 
 void UpdateCoin(Player *player){
     for (int i = 0; i < COIN_COUNT; i++){
@@ -314,13 +308,11 @@ void DrawPlayer(Player* player, int currentFrame){
     // Load sprite sheet texture
     player->run_animation = LoadTexture("assets/Run(32x32).png");
     player->idle_animation = LoadTexture("assets/Idle(32x32).png");
-    //if(player->is_moving){
+    if (player->is_moving) {
         DrawTextureRec(player->run_animation, player->frames[currentFrame], player->position, WHITE);
-        
-    /*}
-    else if(player->is_moving){
+    } else {
         DrawTextureRec(player->idle_animation, player->frames[currentFrame], player->position, WHITE);
-    }*/
+    }
 }
 
 void DrawCoins(){
@@ -363,15 +355,33 @@ void DrawScoreText(){
     
 }
 
-void RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity){
-    Rectangle colArea = RectangleResize(rect, velocity);
+void RectangleCollisionUpdate(Rectangle *rect, Rectangle *frame, float spriteWidth, float spriteHeight, Vector2 *velocity) {
+    // Calculate the current position of the sprite's bottom-right corner
+    float x = rect->x + frame->x + frame->width;
+    float y = rect->y + frame->y + frame->height;
+    
+    // Add the velocity to the current position to get the new position
+    x += velocity->x;
+    y += velocity->y;
+    
+    // Calculate the new position of the sprite's top-left corner based on the new bottom-right corner
+    float newX = x - spriteWidth;
+    float newY = y - spriteHeight;
+    
+    // Resize the collision area based on the new top-left corner position
+    Rectangle colArea = {newX, newY, spriteWidth, spriteHeight};
+    
+    // Get the list of tiles that intersect with the resized collision area
     RectList *tiles = RectangleListFromTiles(&colArea, &map);
     
+    // Check for collision with each tile in the list
     RectangleTileCollision(rect, velocity, tiles);
-    // free allocated RectList memory
+    
+    // Free allocated RectList memory
     MemFree(tiles->rect);
     MemFree(tiles);
 }
+
 
 Rectangle RectangleResize(Rectangle *rect, Vector2 *size){
     Rectangle r = (Rectangle){
