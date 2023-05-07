@@ -64,7 +64,7 @@ int screenHeight = 32*MAP_H;
 const int gameWidth = 32*MAP_W;
 const int gameHeight = 32*MAP_H;
 
-Rectangle player = {32.0f * 2, 32.0f * 8, 32.0f, 32.0f};
+//Rectangle player = {32.0f * 2, 32.0f * 8, 32.0f, 32.0f};
 
 #define COIN_COUNT 165
 Rectangle coins[COIN_COUNT] = {0};
@@ -207,6 +207,12 @@ void UpdatePlayer(Player* player, int current_frame){
     // INPUT
     dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
     dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
+
+    if(IsKeyDown(KEY_D) || IsKeyDown(KEY_A) || IsKeyDown(KEY_S) || IsKeyDown(KEY_W)){
+        player->is_moving = true;
+    }
+    else
+        player->is_moving = false;
     
     // player 
     vel.x += (dirX * maxSpd - vel.x) * acc;
