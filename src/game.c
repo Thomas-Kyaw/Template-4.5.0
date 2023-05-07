@@ -225,8 +225,8 @@ void UpdatePlayer(Player* player, int current_frame){
         vel.y = maxSpd;
     }
     RectangleCollisionUpdate(&(player->frames[current_frame]), &vel);
-    //player->position.x += vel.x;
-    //player->position.y += vel.y;
+    player->position.x += vel.x;
+    player->position.y += vel.y;
 }
 
 void UpdateCoin(Player *player){
@@ -314,10 +314,11 @@ void DrawPlayer(Player* player, int currentFrame){
     // Load sprite sheet texture
     player->run_animation = LoadTexture("assets/Run(32x32).png");
     player->idle_animation = LoadTexture("assets/Idle(32x32).png");
-   //if(player->is_moving){
+    //if(player->is_moving){
         DrawTextureRec(player->run_animation, player->frames[currentFrame], player->position, WHITE);
-    //}
-    /*else if(player->is_moving){
+        
+    /*}
+    else if(player->is_moving){
         DrawTextureRec(player->idle_animation, player->frames[currentFrame], player->position, WHITE);
     }*/
 }
