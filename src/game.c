@@ -1,12 +1,7 @@
 #include "raylib.h"
+#include "raymath.h"
 #include <math.h>
 #include <stdlib.h>
-//tile collision types
-#define EMPTY 0
-#define BLOCK 1
-
-#define CHAR_WIDTH 32
-#define CHAR_HEIGHT 32
 
 typedef struct{
     float x;
@@ -23,34 +18,32 @@ typedef struct{
     int size;
 }RectList;
 
-typedef struct Player {
-    Texture2D run_animation;
-    Texture2D idle_animation;
-    Vector2 direction;
+typedef struct {
     Vector2 position;
-    float maxSpeed;
-    float acceleration;
     Vector2 velocity;
-    float speed;
-    bool is_moving;
-    Rectangle frames[12];
-} Player;
+    int tileIndex;
+    int numTiles;
+} Ball;
 
-void GameInit(Player *player);
-void GameUpdate(Player *player, int current_frame);
-void GameDraw(Player *player, int current_frame);
-//void GameLoop(){GameUpdate(); GameDraw();}
-void Reset(Player *player);
+Color PEACH = {255, 229, 180, 100};
+void GameInit();
+void GameUpdate();
+void GameDraw(Texture2D *wall);
+void Reset();
+
+void DrawStartScreen();
+void PauseScreen();
+void VictoryScreen();
+void GameOverScreen();
 
 void DrawTileGrid();
-void DrawTileMap();
+void DrawTileMap(Texture2D *wall);
 void DrawCoins();
-void DrawPlayer(Player *player, int current_frame);
+void DrawPlayer();
 void DrawScoreText();
 
-void UpdateScreen();
-void UpdatePlayer(Player *player, int current_frame);
-void UpdateCoin(Player *player);
+void UpdatePlayer();
+void UpdateCoin();
 
 void        RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity);
 Rectangle   RectangleResize(Rectangle *rect, Vector2 *size);
@@ -59,14 +52,16 @@ void        RectangleTileCollision(Rectangle *rect, Vector2 *velocity, RectList 
 
 #define MAP_W 20
 #define MAP_H 12
+#define NUM_TILES (MAP_H * MAP_W)
 int screenWidth = 32*MAP_W;
 int screenHeight = 32*MAP_H;
 const int gameWidth = 32*MAP_W;
 const int gameHeight = 32*MAP_H;
 
-//Rectangle player = {32.0f * 2, 32.0f * 8, 32.0f, 32.0f};
+Rectangle player = {32.0f, 32.0f, 32.0f, 32.0f};
+int health = 5;
 
-#define COIN_COUNT 165
+#define COIN_COUNT 139
 Rectangle coins[COIN_COUNT] = {0};
 bool visible[COIN_COUNT] = {0};
 int points = 0;
@@ -74,75 +69,193 @@ int time_a = 0;       // For animation
 
 Grid map;
 int tiles[] = {
-1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,1,
-1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,1,
-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1,
+    1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 };
 
+
+//setting pause bool
+bool  is_paused = false;
+bool game_running = true;
+bool is_victory = false;
+
 int main(void){
-    Player* player = (Player*)malloc(sizeof(Player));
-    // Define animation variables
-    int currentFrame = 0;
-    int frameCounter = 0;
-    int frameSpeed = 5;
-    GameInit(player);
+    GameInit();
+    InitAudioDevice();
     SetTargetFPS(60);
-    while (!WindowShouldClose()){
-        // Update animation frame
-        frameCounter++;
-        if (frameCounter >= frameSpeed)
-        {
-            frameCounter = 0;
-            currentFrame++;
-            if (currentFrame > 11) 
-                currentFrame = 0;
+    DrawStartScreen();
+    Texture2D wall = LoadTexture("assets/Wall.png");
+    // Disable ESC key quit
+    SetExitKey(KEY_NULL);
+    while (game_running && !WindowShouldClose()){
+        if(IsKeyPressed(KEY_ESCAPE)){
+            is_paused = !is_paused;
         }
-        GameUpdate(player, currentFrame);
-        GameDraw(player, currentFrame);
+        if(!is_paused){
+            GameUpdate();
+        }
+        GameDraw(&wall);
     }
+    CloseAudioDevice();
     CloseWindow();
     return 0;
 }
 
-void GameInit(Player* player) {
+void DrawStartScreen()
+{
+    Music bing_chilling_song = LoadMusicStream("assets/Oogway_Ascends.mp3");
+    PlayMusicStream(bing_chilling_song);
+    SetMusicVolume(bing_chilling_song, 0.5f);   
+    bool playing_music = true;
+
+    int blink_timer = 0; // initialize the blink timer
+    bool show_text = true; // start with the text visible
+
+    SetExitKey(KEY_NULL);
+    while (game_running)
+    {
+        // Check for quit button press
+        if (WindowShouldClose())
+        {
+            game_running = false;
+            break;
+        }
+
+        if (IsKeyPressed(KEY_ENTER)) 
+            break;
+
+        if (IsKeyPressed(KEY_SPACE))
+        {
+            if (playing_music){
+                PauseMusicStream(bing_chilling_song);
+                playing_music = false;
+            }
+            else{
+                ResumeMusicStream(bing_chilling_song);
+                playing_music = true;
+            }
+        }
+
+        // Update music stream
+        UpdateMusicStream(bing_chilling_song);
+
+        // Update blink timer
+        blink_timer++;
+        if (blink_timer >= 30) { // change the '10' to adjust the blink speed
+            show_text = !show_text;
+            blink_timer = 0;
+        }
+
+        BeginDrawing();
+        ClearBackground(SKYBLUE);
+
+        if (show_text) {
+            DrawText("Press ENTER to start game", GetScreenWidth()/2 - MeasureText("Press ENTER to start game", 18)/2, GetScreenHeight()/2 - 40, 18, BLACK);
+        }
+        DrawText("Press SPACE to pause/resume music", GetScreenWidth()/2 - MeasureText("Press SPACE to pause/resume music", 17)/2 , GetScreenHeight()/2, 17, MAROON);
+        DrawText("- Music -",  GetScreenWidth()/2 - MeasureText("- Music -", 17)/2 , GetScreenHeight()/2 + 150, 17, PEACH);
+        DrawText("Oogway Ascends by Hams Zimmer", GetScreenWidth()/2 - MeasureText("Oogway Ascends by Hams Zimmer", 14)/2, GetScreenHeight()/2 + 170, 14, PEACH);
+            
+        EndDrawing();
+    }
+}
+
+void PauseScreen() {
+    const int screenWidth = GetScreenWidth();
+    const int screenHeight = GetScreenHeight();
+    const int buttonWidth = 200;
+    const int buttonHeight = 50;
+    const int buttonSpacing = 20;
+    const int buttonsTotalHeight = 2 * buttonHeight + buttonSpacing;
+    const int buttonsX = (screenWidth - buttonWidth) / 2;
+    const int buttonsY = (screenHeight - buttonsTotalHeight) / 2;
+    
+    // Draw semi-transparent background
+    DrawRectangle(0, 0, screenWidth, screenHeight, Fade(SKYBLUE, 0.5f));
+    
+    // Draw buttons
+    Rectangle continueButtonRect = { buttonsX, buttonsY, buttonWidth, buttonHeight };
+    Rectangle exitButtonRect = { buttonsX, buttonsY + buttonHeight + buttonSpacing, buttonWidth, buttonHeight };
+    
+    DrawRectangleRec(continueButtonRect, PINK);
+    DrawRectangleLinesEx(continueButtonRect, 2, BLACK);
+    DrawText("Continue", continueButtonRect.x + buttonWidth / 2 - MeasureText("Continue", 30) / 2, continueButtonRect.y + buttonHeight / 2 - 15, 30, BLACK);
+    
+    DrawRectangleRec(exitButtonRect, PINK);
+    DrawRectangleLinesEx(exitButtonRect, 2, BLACK);
+    DrawText("Exit", exitButtonRect.x + buttonWidth / 2 - MeasureText("Exit", 30) / 2, exitButtonRect.y + buttonHeight / 2 - 15, 30, BLACK);
+    
+    // Check for button clicks
+    const bool isMouseLeftPressed = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+    const Vector2 mousePos = GetMousePosition();
+    
+    if (CheckCollisionPointRec(mousePos, continueButtonRect) && isMouseLeftPressed) {
+        is_paused = false; // continue game
+    }
+    
+    if (CheckCollisionPointRec(mousePos, exitButtonRect) && isMouseLeftPressed) {
+        game_running = false; // exit game
+    }
+}
+
+void VictoryScreen(){
+    Music victory_music = LoadMusicStream("assets/Oogway_Ascends.mp3");
+    PlayMusicStream(victory_music);
+    ClearBackground(RAYWHITE);
+    // Set background color and text color
+    Color bg_color = { 255, 255, 255, 200 };
+    Color text_color = BLACK;
+
+    // Draw victory message and buttons
+    DrawRectangle(0, 0, screenWidth, screenHeight, bg_color);
+    DrawText("Congratulations, you won!", GetScreenWidth() / 2 - MeasureText("Congratulations, you won!", 40) / 2, GetScreenHeight() / 2 - 70, 40, text_color);
+
+    Rectangle restart_button = { GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 10, 120, 50 };
+    DrawRectangleRec(restart_button, BLUE);
+    DrawText("Restart", restart_button.x + 15, restart_button.y + 15, 20, WHITE);
+
+    Rectangle exit_button = { GetScreenWidth() / 2 + 30, GetScreenHeight() / 2 + 10, 120, 50 };
+    DrawRectangleRec(exit_button, RED);
+    DrawText("Exit", exit_button.x + 25, exit_button.y + 15, 20, WHITE);
+    // Update the audio stream
+    UpdateMusicStream(victory_music);
+
+    // Check for button clicks
+    if (CheckCollisionPointRec(GetMousePosition(), restart_button) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        Reset();
+        StopMusicStream(victory_music); 
+        return;
+    }
+    else if (CheckCollisionPointRec(GetMousePosition(), exit_button) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+        game_running = false;
+    }
+}
+
+void GameInit() {
+    bool game_running = true;
     InitWindow(screenWidth, screenHeight, "classic game: platformer");
-    player->position.x = map.s;
-    player->position.y = map.s;
-    player->frames[0] = (Rectangle){ 0, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[1] = (Rectangle){ CHAR_WIDTH, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[2] = (Rectangle){ CHAR_WIDTH*2, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[3] = (Rectangle){ CHAR_WIDTH*3, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[4] = (Rectangle){ CHAR_WIDTH*4, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[5] = (Rectangle){ CHAR_WIDTH*5, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[6] = (Rectangle){ CHAR_WIDTH*6, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[7] = (Rectangle){ CHAR_WIDTH*7, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[8] = (Rectangle){ CHAR_WIDTH*8, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[9] = (Rectangle){ CHAR_WIDTH*9, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[10] = (Rectangle){ CHAR_WIDTH*10, 0, CHAR_WIDTH, CHAR_HEIGHT };
-    player->frames[11] = (Rectangle){ CHAR_WIDTH*11, 0, CHAR_WIDTH, CHAR_HEIGHT };
     map.x = 0.0f;
     map.y = 0.0f;
     map.w = MAP_W;
     map.h = MAP_H;
     map.s = 32;
     map.cell = tiles;
-    Reset(player);
+    Reset();
 }
 
-void Reset(Player *player){
+void Reset(){
     const float s = 32.0f;
-    player->position.x = map.s;
-    player->position.y = map.s;
-    //player = (Rectangle){s * 2, s * 6, s, s};
+    player = (Rectangle){s , s , s, s};
     points = 0;
     time_a = 0;
 
@@ -160,23 +273,32 @@ void Reset(Player *player){
     }
 }
 
-void GameUpdate(Player *player, int current_frame){
-    UpdatePlayer(player, current_frame);
-    UpdateCoin(player);
+void GameUpdate(){
+    UpdatePlayer();
+    UpdateCoin();
+    if(!is_victory) {
+        // game logic
+        if(IsKeyPressed(KEY_ESCAPE)) {
+            is_paused = !is_paused;
+        }
+    } else {
+        is_paused = false; // don't pause when victory is achieved
+    }
 }
 
-/*void UpdatePlayer(){
+void UpdatePlayer(){
     const float maxSpd = 6.0f;
     const float acc = 0.1f;
     static int dirX = 0;
     static int dirY = 0;
     static Vector2 vel = {0};
-      
-    // INPUT
-    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
-    dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
     
-    // player 
+    
+    // INPUT
+    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A) + IsKeyDown(KEY_RIGHT) - IsKeyDown(KEY_LEFT));
+    dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W) + IsKeyDown(KEY_DOWN) - IsKeyDown(KEY_UP));
+    
+    // LEFT RIGHT A D keys speed
     vel.x += (dirX * maxSpd - vel.x) * acc;
     if (vel.x < -maxSpd){
         vel.x = -maxSpd;
@@ -184,7 +306,8 @@ void GameUpdate(Player *player, int current_frame){
     else if (vel.x > maxSpd){
         vel.x = maxSpd;
     }
-
+    
+    // UP DOWN W S keys speed
     vel.y += (dirY * maxSpd - vel.y) * acc;
     if (vel.y < -maxSpd){
         vel.y = -maxSpd;
@@ -193,53 +316,12 @@ void GameUpdate(Player *player, int current_frame){
         vel.y = maxSpd;
     }
     RectangleCollisionUpdate(&player, &vel);
-    //player.x += vel.x;
-    //player.y += vel.y;
-}*/
-
-void UpdatePlayer(Player* player, int current_frame){
-    const float maxSpd = 6.0f;
-    const float acc = 0.1f;
-    static int dirX = 0;
-    static int dirY = 0;
-    static Vector2 vel = {0};
-      
-    // INPUT
-    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A));
-    dirY = (float)(IsKeyDown(KEY_S) - IsKeyDown(KEY_W));
-
-    if(IsKeyDown(KEY_D) || IsKeyDown(KEY_A) || IsKeyDown(KEY_S) || IsKeyDown(KEY_W)){
-        player->is_moving = true;
-    }
-    else
-        player->is_moving = false;
-    
-    // player 
-    vel.x += (dirX * maxSpd - vel.x) * acc;
-    if (vel.x < -maxSpd){
-        vel.x = -maxSpd;
-    }
-    else if (vel.x > maxSpd){
-        vel.x = maxSpd;
-    }
-
-    vel.y += (dirY * maxSpd - vel.y) * acc;
-    if (vel.y < -maxSpd){
-        vel.y = -maxSpd;
-    }
-    else if (vel.y > maxSpd){
-        vel.y = maxSpd;
-    }
-    RectangleCollisionUpdate(&(player->frames[current_frame]), &vel);
-    //player->position.x += vel.x;
-    //player->position.y += vel.y;
 }
 
-void UpdateCoin(Player *player){
+void UpdateCoin(){
     for (int i = 0; i < COIN_COUNT; i++){
-        for(int j = 0;j < 12;j++)
         if (visible[i]){
-            if (CheckCollisionRecs(coins[i], player->frames[j])){
+            if (CheckCollisionRecs(coins[i], player)){
                 visible[i] = false;
                 points += 1;
             }
@@ -247,24 +329,38 @@ void UpdateCoin(Player *player){
     }
     
     if (IsKeyPressed(KEY_ENTER)){
-        Reset(player);
+        Reset();
     }
 }
 
-void GameDraw(Player* player, int current_frame){   
-    // Draw the viewport
+void GameDraw(Texture2D *wall){
+    Color bcg_color = {155, 255, 124, 100};
+    if(points == COIN_COUNT){
+        is_victory = true;
+    }
     BeginDrawing();
-        ClearBackground(BLACK);
-        DrawRectangle(0, 0, gameWidth, gameHeight, SKYBLUE); // Background
-        DrawTileMap();
+    if(!is_paused){
+        ClearBackground(WHITE);
+        DrawRectangle(0, 0, gameWidth, gameHeight, bcg_color); // Background
+        DrawTileMap(wall);
         DrawTileGrid();
         DrawScoreText();
         DrawCoins();
-        DrawPlayer(player,current_frame);
+        DrawPlayer();
+        if(is_victory) {
+            VictoryScreen();
+            is_victory = false;
+        }
+    }
+    else{
+        ClearBackground(SKYBLUE);
+        PauseScreen();
+        DrawText("- Paused -",  GetScreenWidth()/2 - MeasureText("- Paused -", 40)/2  , 0, 40, RED);
+    }
     EndDrawing();
 }
 
-void DrawTileMap(){
+void DrawTileMap(Texture2D *wall){
     for (int y = 0; y < map.h; y++){
         for (int x = 0; x < map.w; x++){
             int i = x + y * map.w;
@@ -272,11 +368,9 @@ void DrawTileMap(){
             if (tile){
                 float cellX = (map.x + map.s * x);
                 float cellY = (map.y + map.s * y);
-                DrawRectangle((int)cellX, (int)cellY, map.s, map.s, LIME);
-                // check tile above
-                if (i - map.w >= 0 && !map.cell[i - map.w]){
-                    DrawLineEx((Vector2){cellX, cellY + 3}, (Vector2){cellX + map.s, cellY + 3}, 6.0f, GREEN);
-                }
+                //DrawRectangle((int)cellX, (int)cellY, map.s, map.s, LIME);
+                Rectangle dest = {(int)cellX, (int)cellY, map.s, map.s};
+                DrawTextureRec(*wall, dest, (Vector2){cellX, cellY}, WHITE);
             }
         }
     }
@@ -298,33 +392,81 @@ void DrawTileGrid(){
         DrawLine(X, y1, X, y2, c);
     }
 }
+    
 
-/*void DrawPlayer(Player* player){
-    DrawRectangle((int)player->position.x, (int)player->position.y, CHAR_WIDTH, CHAR_HEIGHT, WHITE);
+void DrawPlayer() {
+    DrawRectangle((int)player.x, (int)player.y, (int)player.width, (int)player.height, PEACH);
     DrawRectangleLinesEx(player, 2, BLACK);
     
-    // Artistic touch
-    static int dirX = 0;
-    dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * 4;
-    Vector2 L1 = (Vector2){player.x + 12 + dirX, player.y + 4};
-    Vector2 R1 = (Vector2){player.x + 20 + dirX, player.y + 4};
-    Vector2 L2 = L1;
-    L2.y += 8;
-    Vector2 R2 = R1;
-    R2.y += 8;
-    DrawLineEx(L1, L2, 2.0f, BLACK);
-    DrawLineEx(R1, R2, 2.0f, BLACK);
-}*/
+    static bool isEyesMoving = true; // flag for tracking eye state
+    if(!is_paused){
+        // Artistic touch
+        static int dirX = 0;
+        dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * 4;
+        Vector2 L1 = (Vector2){player.x + 12 + dirX, player.y + 4};
+        Vector2 R1 = (Vector2){player.x + 20 + dirX, player.y + 4};
+        Vector2 L2 = L1;
+        L2.y += 8;
+        Vector2 R2 = R1;
+        R2.y += 8;
+        DrawLineEx(L1, L2, 2.0f, BLACK);
+        DrawLineEx(R1, R2, 2.0f, BLACK);
 
-void DrawPlayer(Player* player, int currentFrame){
-    // Load sprite sheet texture
-    player->run_animation = LoadTexture("assets/Run(32x32).png");
-    player->idle_animation = LoadTexture("assets/Idle(32x32).png");
-    if(player->is_moving){
-        DrawTextureRec(player->run_animation, player->frames[currentFrame], player->position, WHITE);
+        static int dirY = 0;
+        dirY = (float)(IsKeyDown(KEY_W) - IsKeyDown(KEY_S)) * 4;
+        Vector2 L3 = (Vector2){player.x + 14 + dirX, player.y + 12 + dirY};
+        Vector2 R3 = (Vector2){player.x + 18 + dirX, player.y + 12 + dirY};
+        Vector2 L4 = L3;
+        L4.y -= 8;
+        Vector2 R4 = R3;
+        R4.y -= 8;
+        DrawLineEx(L3, L4, 2.0f, BLACK);
+        DrawLineEx(R3, R4, 2.0f, BLACK);
+
+        isEyesMoving = true;
     }
-    else if(player->is_moving){
-        DrawTextureRec(player->idle_animation, player->frames[currentFrame], player->position, WHITE);
+    else{
+        isEyesMoving = false;
+    }
+    
+    static bool isMouthOpen = false; // flag for tracking mouth state
+    static int mouthHeight = 4; // initial mouth height
+    static int frameCount = 0; // frame counter
+    
+    // Draw mouth
+    if (isMouthOpen) {
+        DrawRectangle((int)player.x + 10, (int)player.y + 20, 12, mouthHeight, BLACK);
+    } else {
+        DrawRectangle((int)player.x + 10, (int)player.y + 20, 12, 4, BLACK);
+    }
+    
+    // Update mouth state
+    if (frameCount == 20) {
+        if (mouthHeight <= 0) {
+            isMouthOpen = false;
+        } else if (mouthHeight >= 8) {
+            isMouthOpen = true;
+        }
+        mouthHeight += isMouthOpen ? -1 : 1;
+        frameCount = 0;
+    } else {
+        frameCount++;
+    }
+    
+    // Update eye state
+    if (isEyesMoving) {
+        // Artistic touch
+        static int eyeXOffset = 0;
+        eyeXOffset = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * 2;
+        static int eyeYOffset = 0;
+        eyeYOffset = (float)(IsKeyDown(KEY_W) - IsKeyDown(KEY_S)) * 2;
+        // Draw the pupils
+        DrawCircle((int)(player.x + 15 + eyeXOffset), (int)(player.y + 8 + eyeYOffset), 2, BLACK);
+        DrawCircle((int)(player.x + 19 + eyeXOffset), (int)(player.y + 8 + eyeYOffset), 2, BLACK);
+    } else {
+        // Draw the pupils in a fixed position
+        DrawCircle((int)(player.x + 15), (int)(player.y + 8), 2, BLACK);
+        DrawCircle((int)(player.x + 19), (int)(player.y + 8), 2, BLACK);
     }
 }
 
@@ -352,19 +494,14 @@ void DrawCoins(){
 
 void DrawScoreText(){
     const char *text;
-    if (points == COIN_COUNT){
-        text = TextFormat("Pres 'ENTER' to restart!");
-    }
-    else{
-        text = TextFormat("Score: %d", points);
-    }
+
+    text = TextFormat("Score: %d", points);
     
     const int size = 24;
     int x = gameWidth /2 - MeasureText(text, size) / 2;
     int y = 48;
-    
-    DrawText(text, x, y+1, size, BLACK);
-    DrawText(text, x, y, size, WHITE);
+
+    DrawText(text, x, y, size, BLACK);
     
 }
 
@@ -378,13 +515,22 @@ void RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity){
     MemFree(tiles);
 }
 
-Rectangle RectangleResize(Rectangle *rect, Vector2 *size){
-    Rectangle r = (Rectangle){
-        size->x > 0 ? rect->x : rect->x + size->x,
-        size->y > 0 ? rect->y : rect->y + size->y,
-        size->x > 0 ? rect->width + size->x : rect->width - size->x,
-        size->y > 0 ? rect->height + size->y : rect->height - size->y
-        };
+Rectangle RectangleResize(Rectangle* rect, Vector2* size) {
+    Rectangle r;
+    if (size->x > 0) {
+        r.x = rect->x;
+        r.width = rect->width + size->x;
+    } else {
+        r.x = rect->x + size->x;
+        r.width = rect->width - size->x;
+    }
+    if (size->y > 0) {
+        r.y = rect->y;
+        r.height = rect->height + size->y;
+    } else {
+        r.y = rect->y + size->y;
+        r.height = rect->height - size->y;
+    }
     return r;
 }
 
