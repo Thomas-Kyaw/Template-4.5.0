@@ -2,8 +2,10 @@
 #include "raymath.h"
 #include <math.h>
 #include <stdlib.h>
+#include <stdlib.h> // for rand() and srand()
+#include <time.h>   // for time()
 
-typedef struct{
+typedef struct grid{
     float x;
     float y;
     int w;      // width
@@ -13,17 +15,15 @@ typedef struct{
 }Grid;
 
 // List of Rectangles to check for a collision.
-typedef struct{
+typedef struct rectlist{
     Rectangle *rect;
     int size;
 }RectList;
 
-typedef struct {
-    Vector2 position;
-    Vector2 velocity;
-    int tileIndex;
-    int numTiles;
-} Ball;
+typedef struct balls_lmfao{
+    float radius;
+    Vector2 center;
+}Balls;
 
 Color PEACH = {255, 229, 180, 100};
 void GameInit();
@@ -40,15 +40,18 @@ void DrawTileGrid();
 void DrawTileMap(Texture2D *wall);
 void DrawCoins();
 void DrawPlayer();
+void DrawEnemy1();
 void DrawScoreText();
+void DrawHealthText();
 
 void UpdatePlayer();
 void UpdateCoin();
+void UpdateEnemy1Rec();
 
 void        RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity);
-Rectangle   RectangleResize(Rectangle *rect, Vector2 *size);
+Rectangle   RectangleUpdateDimensions(Rectangle *rect, Vector2 *size);
 RectList*   RectangleListFromTiles(Rectangle *rect, Grid *grid);
-void        RectangleTileCollision(Rectangle *rect, Vector2 *velocity, RectList *list);
+void ResolveRectangleTileCollision(Rectangle* playerRect, Vector2* playerVelocity, RectList* collidableTiles);
 
 #define MAP_W 20
 #define MAP_H 12
@@ -59,6 +62,9 @@ const int gameWidth = 32*MAP_W;
 const int gameHeight = 32*MAP_H;
 
 Rectangle player = {32.0f, 32.0f, 32.0f, 32.0f};
+Rectangle enemy1;
+Rectangle enemy2;
+Rectangle enemy3;
 int health = 5;
 
 #define COIN_COUNT 139
@@ -67,14 +73,22 @@ bool visible[COIN_COUNT] = {0};
 int points = 0;
 int time_a = 0;       // For animation
 
+//ball
+
+Sound coin_sound;
+Music victory_music;
+
+#define MOVE_HORIZONTAL 0
+#define MOVE_VERTICAL 1
+
 Grid map;
 int tiles[] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1,
     1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1,
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
     1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
@@ -82,7 +96,6 @@ int tiles[] = {
     1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
 };
-
 
 //setting pause bool
 bool  is_paused = false;
@@ -95,8 +108,10 @@ int main(void){
     SetTargetFPS(60);
     DrawStartScreen();
     Texture2D wall = LoadTexture("assets/Wall.png");
+
     // Disable ESC key quit
     SetExitKey(KEY_NULL);
+
     while (game_running && !WindowShouldClose()){
         if(IsKeyPressed(KEY_ESCAPE)){
             is_paused = !is_paused;
@@ -106,10 +121,13 @@ int main(void){
         }
         GameDraw(&wall);
     }
+    UnloadMusicStream(victory_music);
+    UnloadSound(coin_sound);
     CloseAudioDevice();
     CloseWindow();
     return 0;
 }
+
 
 void DrawStartScreen()
 {
@@ -168,6 +186,7 @@ void DrawStartScreen()
             
         EndDrawing();
     }
+    UnloadMusicStream(bing_chilling_song);
 }
 
 void PauseScreen() {
@@ -209,36 +228,41 @@ void PauseScreen() {
 }
 
 void VictoryScreen(){
-    Music victory_music = LoadMusicStream("assets/Oogway_Ascends.mp3");
+    victory_music = LoadMusicStream("assets/victory_music.mp3");
     PlayMusicStream(victory_music);
-    ClearBackground(RAYWHITE);
-    // Set background color and text color
-    Color bg_color = { 255, 255, 255, 200 };
-    Color text_color = BLACK;
+    while (IsMusicStreamPlaying(victory_music)){
+        ClearBackground(PINK);
+        // Set background color and text color
+        Color bg_color = { 255, 255, 255, 200 };
+        Color text_color = BLACK;
 
-    // Draw victory message and buttons
-    DrawRectangle(0, 0, screenWidth, screenHeight, bg_color);
-    DrawText("Congratulations, you won!", GetScreenWidth() / 2 - MeasureText("Congratulations, you won!", 40) / 2, GetScreenHeight() / 2 - 70, 40, text_color);
+        // Draw victory message and buttons
+        DrawRectangle(0, 0, screenWidth, screenHeight, bg_color);
+        DrawText("Congratulations, you won!", GetScreenWidth() / 2 - MeasureText("Congratulations, you won!", 40) / 2, GetScreenHeight() / 2 - 70, 40, text_color);
 
-    Rectangle restart_button = { GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 10, 120, 50 };
-    DrawRectangleRec(restart_button, BLUE);
-    DrawText("Restart", restart_button.x + 15, restart_button.y + 15, 20, WHITE);
+        Rectangle restart_button = { GetScreenWidth() / 2 - 150, GetScreenHeight() / 2 + 10, 120, 50 };
+        DrawRectangleRec(restart_button, BLUE);
+        DrawText("Restart", restart_button.x + 15, restart_button.y + 15, 20, WHITE);
 
-    Rectangle exit_button = { GetScreenWidth() / 2 + 30, GetScreenHeight() / 2 + 10, 120, 50 };
-    DrawRectangleRec(exit_button, RED);
-    DrawText("Exit", exit_button.x + 25, exit_button.y + 15, 20, WHITE);
-    // Update the audio stream
-    UpdateMusicStream(victory_music);
+        Rectangle exit_button = { GetScreenWidth() / 2 + 30, GetScreenHeight() / 2 + 10, 120, 50 };
+        DrawRectangleRec(exit_button, RED);
+        DrawText("Exit", exit_button.x + 25, exit_button.y + 15, 20, WHITE);
+        // Update the audio stream
+        UpdateMusicStream(victory_music);
 
-    // Check for button clicks
-    if (CheckCollisionPointRec(GetMousePosition(), restart_button) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-        Reset();
-        StopMusicStream(victory_music); 
-        return;
+        // Check for button clicks
+        if (CheckCollisionPointRec(GetMousePosition(), restart_button) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            Reset();
+            return;
+        }
+        else if (CheckCollisionPointRec(GetMousePosition(), exit_button) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            game_running = false;
+            return;
+        }
+        EndDrawing();
     }
-    else if (CheckCollisionPointRec(GetMousePosition(), exit_button) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-        game_running = false;
-    }
+    StopMusicStream(victory_music);
+    UnloadMusicStream(victory_music);
 }
 
 void GameInit() {
@@ -276,6 +300,7 @@ void Reset(){
 void GameUpdate(){
     UpdatePlayer();
     UpdateCoin();
+    UpdateEnemy1Rec();
     if(!is_victory) {
         // game logic
         if(IsKeyPressed(KEY_ESCAPE)) {
@@ -319,17 +344,46 @@ void UpdatePlayer(){
 }
 
 void UpdateCoin(){
+    coin_sound = LoadSound("assets/coin_sound.mp3");
+    SetSoundVolume(coin_sound, 0.1f);
     for (int i = 0; i < COIN_COUNT; i++){
         if (visible[i]){
             if (CheckCollisionRecs(coins[i], player)){
                 visible[i] = false;
                 points += 1;
+                PlaySound(coin_sound);
             }
         }
     }
     
     if (IsKeyPressed(KEY_ENTER)){
         Reset();
+    }
+}
+
+void UpdateEnemy1Rec(){
+
+    Vector2 direction = { 1, 0 };  
+    float speed = 5;  
+    int start_x = 202 % MAP_W;
+    int start_y = 202 % MAP_H;
+    float startCellX = map.x + map.s * start_x;
+    float startCellY = map.y + map.s * start_y;
+        
+    int end_x = 205 % MAP_W;
+    int end_y = 205 % MAP_H;
+    float endCellX = map.x + map.s * end_x;
+    float endCellY = map.x + map.s * end_y;
+    endCellX += map.s;
+    
+    enemy1.width = 32;
+    enemy1.height = 32;
+    enemy1.x = direction.x * speed;
+    if(enemy1.x >= endCellX){
+        direction.x = -1;
+    }
+    else{
+        direction.x = 1;
     }
 }
 
@@ -347,10 +401,16 @@ void GameDraw(Texture2D *wall){
         DrawScoreText();
         DrawCoins();
         DrawPlayer();
+        DrawHealthText();
+        DrawEnemy1();
         if(is_victory) {
             VictoryScreen();
             is_victory = false;
         }
+        int x = 202 % MAP_W;  // x = 2
+        int y = 202 / MAP_W;  // y = 10
+        float cellX = map.x + map.s * x;
+        float cellY = map.y + map.s * y;
     }
     else{
         ClearBackground(SKYBLUE);
@@ -377,7 +437,7 @@ void DrawTileMap(Texture2D *wall){
 }
 
 void DrawTileGrid(){
-    Color c = (Color){255,255,255,25};
+    Color c = (Color){255,100,100,200};
     
     for (int y = 0; y < map.h + 1; y++){
         int x1 = map.x;
@@ -393,14 +453,13 @@ void DrawTileGrid(){
     }
 }
     
-
 void DrawPlayer() {
     DrawRectangle((int)player.x, (int)player.y, (int)player.width, (int)player.height, PEACH);
     DrawRectangleLinesEx(player, 2, BLACK);
     
     static bool isEyesMoving = true; // flag for tracking eye state
     if(!is_paused){
-        // Artistic touch
+        // Draw eyes
         static int dirX = 0;
         dirX = (float)(IsKeyDown(KEY_D) - IsKeyDown(KEY_A)) * 4;
         Vector2 L1 = (Vector2){player.x + 12 + dirX, player.y + 4};
@@ -491,7 +550,6 @@ void DrawCoins(){
     }
 }
 
-
 void DrawScoreText(){
     const char *text;
 
@@ -505,119 +563,137 @@ void DrawScoreText(){
     
 }
 
+void DrawEnemy1(){
+    DrawRectangle((int)enemy1.x, (int)enemy1.y, (int)enemy1.width, (int)enemy1.height, RED);
+}
+
+void DrawHealthText()
+{
+    const char *text;
+    text = TextFormat("HEALTH: %d", health);
+    DrawText(text, 5, 5, 24, BLACK);
+}
+
 void RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity){
-    Rectangle colArea = RectangleResize(rect, velocity);
-    RectList *tiles = RectangleListFromTiles(&colArea, &map);
+    Rectangle collisionArea = RectangleUpdateDimensions(rect, velocity);
+    RectList *tiles = RectangleListFromTiles(&collisionArea, &map);
     
-    RectangleTileCollision(rect, velocity, tiles);
+    ResolveRectangleTileCollision(rect, velocity, tiles);
     // free allocated RectList memory
     MemFree(tiles->rect);
     MemFree(tiles);
 }
 
-Rectangle RectangleResize(Rectangle* rect, Vector2* size) {
-    Rectangle r;
-    if (size->x > 0) {
-        r.x = rect->x;
-        r.width = rect->width + size->x;
+Rectangle RectangleUpdateDimensions(Rectangle* originalRect, Vector2* sizeChangeVector) {
+    Rectangle newRect;
+    if (sizeChangeVector->x > 0) {
+        newRect.x = originalRect->x;
+        newRect.width = originalRect->width + sizeChangeVector->x;
     } else {
-        r.x = rect->x + size->x;
-        r.width = rect->width - size->x;
+        newRect.x = originalRect->x + sizeChangeVector->x;
+        newRect.width = originalRect->width - sizeChangeVector->x;
     }
-    if (size->y > 0) {
-        r.y = rect->y;
-        r.height = rect->height + size->y;
+    if (sizeChangeVector->y > 0) {
+        newRect.y = originalRect->y;
+        newRect.height = originalRect->height + sizeChangeVector->y;
     } else {
-        r.y = rect->y + size->y;
-        r.height = rect->height - size->y;
+        newRect.y = originalRect->y + sizeChangeVector->y;
+        newRect.height = originalRect->height - sizeChangeVector->y;
     }
-    return r;
+    return newRect;
 }
 
-RectList* RectangleListFromTiles(Rectangle *rect, Grid *grid){
-    float offX = rect->x - grid->x;
-    float offY = rect->y - grid->y;
-    float offXw = rect->x - grid->x + rect->width;
-    float offYh = rect->y - grid->y + rect->height;
-    // compensate flooring
-    if (offX < 0.0f){offX -= grid->s;}
-    if (offY < 0.0f){offY -= grid->s;}
-    if (offXw < 0.0f){offXw -= grid->s;}
-    if (offYh < 0.0f){offYh -= grid->s;}
+RectList* RectangleListFromTiles(Rectangle* boundingRect, Grid* tileGrid) {
+    float relativeX = boundingRect->x - tileGrid->x;
+    float relativeY = boundingRect->y - tileGrid->y;
+    float relativeWidth = boundingRect->x - tileGrid->x + boundingRect->width;
+    float relativeHeight = boundingRect->y - tileGrid->y + boundingRect->height;
     
-    // grid coordinates
-    int X = (int)(offX / grid->s);
-    int Y = (int)(offY / grid->s);
-    int sizeX = (int)(offXw / grid->s) - X + 1;
-    int sizeY = (int)(offYh / grid->s) - Y + 1;
+    // Compensate for flooring
+    if (relativeX < 0.0f) {
+        relativeX -= tileGrid->s;
+    }
+    if (relativeY < 0.0f) {
+        relativeY -= tileGrid->s;
+    }
+    if (relativeWidth < 0.0f) {
+        relativeWidth -= tileGrid->s;
+    }
+    if (relativeHeight < 0.0f) {
+        relativeHeight -= tileGrid->s;
+    }
     
-    RectList *list = MemAlloc(sizeof(RectList));
-    list->rect = MemAlloc(sizeof(Rectangle) * sizeX * sizeY);
-    list->size = 0;
+    // Calculate grid coordinates
+    int startTileX = (int)(relativeX / tileGrid->s);
+    int startTileY = (int)(relativeY / tileGrid->s);
+    int numTilesX = (int)(relativeWidth / tileGrid->s) - startTileX + 1;
+    int numTilesY = (int)(relativeHeight / tileGrid->s) - startTileY + 1;
     
-    for (int y = Y; y < Y + sizeY; y++){
-        if (y >= 0 && y < grid->h){
-            for (int x = X; x < X + sizeX; x++){
-                if (x >= 0 && x < grid->w){
-                    int tile = grid->cell[x + y * grid->w];
-                    if (tile){
-                        list->rect[list->size] = (Rectangle){
-                            grid->x + x * grid->s,
-                            grid->y + y * grid->s,
-                            grid->s,
-                            grid->s
-                            };
-                        list->size += 1;
+    RectList* tileList = MemAlloc(sizeof(RectList));
+    tileList->rect = MemAlloc(sizeof(Rectangle) * numTilesX * numTilesY);
+    tileList->size = 0;
+    
+    for (int y = startTileY; y < startTileY + numTilesY; y++) {
+        if (y >= 0 && y < tileGrid->h) {
+            for (int x = startTileX; x < startTileX + numTilesX; x++) {
+                if (x >= 0 && x < tileGrid->w) {
+                    int tileIndex = tileGrid->cell[x + y * tileGrid->w];
+                    if (tileIndex) {
+                        tileList->rect[tileList->size] = (Rectangle) {
+                            tileGrid->x + x * tileGrid->s,
+                            tileGrid->y + y * tileGrid->s,
+                            tileGrid->s,
+                            tileGrid->s
+                        };
+                        tileList->size += 1;
                     }
                 }
             }
         }
     }
-    return list;
+    return tileList;
 }
 
-void RectangleTileCollision(Rectangle *rect, Vector2 *velocity, RectList *list){
-    Rectangle *a = rect;
-    Rectangle *b;
-    Rectangle c = (Rectangle){a->x + velocity->x, a->y, a->width, a->height};
+void ResolveRectangleTileCollision(Rectangle* playerRect, Vector2* playerVelocity, RectList* collidableTiles) {
+    Rectangle* collidableTile;
+    Rectangle futurePlayerRect = (Rectangle) {playerRect->x + playerVelocity->x, playerRect->y, playerRect->width, playerRect->height};
     
     // Solve X axis separately
-    for (int i = 0; i < list->size; i++){
-        b = &list->rect[i]; // next collision Rectangle
-        if (CheckCollisionRecs(c, *b)) {
+    for (int i = 0; i < collidableTiles->size; i++) {
+        collidableTile = &collidableTiles->rect[i]; // next collidable tile
+        if (CheckCollisionRecs(futurePlayerRect, *collidableTile)) {
             // moving to the right
-            if (velocity->x > 0.0f) {
+            if (playerVelocity->x > 0.0f) {
                 // adjust velocity 
-                velocity->x = (b->x - a->width) - a->x;
+                playerVelocity->x = (collidableTile->x - playerRect->width) - playerRect->x;
             }
             // moving to the left
-            else if (velocity->x < 0.0f) {
-                velocity->x = (b->x + b->width) - a->x;
+            else if (playerVelocity->x < 0.0f) {
+                playerVelocity->x = (collidableTile->x + collidableTile->width) - playerRect->x;
             }
         }
     }
-    // set C to resolved X position
-    c.x = a->x + velocity->x;
+    // set futurePlayerRect to resolved X position
+    futurePlayerRect.x = playerRect->x + playerVelocity->x;
     
     // move on Y axis
-    // set C on test Y position
-    c.y += velocity->y;
-    for (int i = 0; i < list->size; i++){
-        b = &list->rect[i];
-        if (CheckCollisionRecs(c, *b)) {
+    // set futurePlayerRect on test Y position
+    futurePlayerRect.y += playerVelocity->y;
+    for (int i = 0; i < collidableTiles->size; i++) {
+        collidableTile = &collidableTiles->rect[i];
+        if (CheckCollisionRecs(futurePlayerRect, *collidableTile)) {
             // moving down
-            if (velocity->y > 0.0f) {
-                velocity->y = (b->y - a->height) - a->y;
+            if (playerVelocity->y > 0.0f) {
+                playerVelocity->y = (collidableTile->y - playerRect->height) - playerRect->y;
             }
             // moving up
-            else if (velocity->y < 0.0f) {
-                velocity->y = (b->y + b->height) - a->y;
+            else if (playerVelocity->y < 0.0f) {
+                playerVelocity->y = (collidableTile->y + collidableTile->height) - playerRect->y;
             }
         }
     }
     
-    rect->x += velocity->x;
-    
-    rect->y += velocity->y;
+    playerRect->x += playerVelocity->x;
+    playerRect->y += playerVelocity->y;
 }
 
