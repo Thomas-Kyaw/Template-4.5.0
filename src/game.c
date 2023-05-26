@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdlib.h> // for rand() and srand()
 #include <time.h>   // for time()
+#include <stdio.h>
 
 typedef struct map{
     float x;
@@ -23,6 +24,16 @@ typedef struct{
     int size;
 }RectList;
 
+typedef struct {
+    Rectangle rect;
+    Vector2 startPos;
+    Vector2 targetPos;
+    Vector2 currentTarget;
+    Vector2 currentPos;
+    Vector2 velocity;
+    Rectangle frameRec[12];
+} Enemy;
+
 Color PEACH = {255, 229, 180, 100};
 void GameInit();
 void GameUpdate();
@@ -33,24 +44,27 @@ void DrawStartScreen();
 void PauseScreen();
 void VictoryScreen();
 void GameOverScreen();
+void InitializeEnemy(Enemy* enemy, Vector2 startPos, Vector2 targetPos);
 
 void DrawTileMap(Texture2D *wall);
 void DrawCoins();
 void DrawPlayer();
 void DrawScoreText();
 void DrawHealthText();
+void DrawEnemy(Enemy* enemy, Texture2D enemy_texture, int currentFrame);
 
 void UpdatePlayer();
 void UpdateCoin();
+void UpdateEnemy(Enemy* enemy, const float speed);
 
 void        RectangleCollisionUpdate(Rectangle *rect, Vector2 *velocity);
 Rectangle   RectangleUpdateDimensions(Rectangle *rect, Vector2 *size);
 RectList*   RectangleListFromTiles(Rectangle *rect, Map *grid);
 void ResolveRectangleTileCollision(Rectangle* playerRect, Vector2* playerVelocity, RectList* collidableTiles);
 
-#define MAP_W 20
-#define MAP_H 12
-#define NUM_TILES (MAP_H * MAP_W)
+#define MAP_W 20 //20 horizontal cells/tiles on the map
+#define MAP_H 12 //12 vertical cells/tiles on the map
+#define NUM_TILES (MAP_H * MAP_W) //number of tiles - currently 240
 int screenWidth = 32*MAP_W;
 int screenHeight = 32*MAP_H;
 const int gameWidth = 32*MAP_W;
@@ -59,29 +73,15 @@ const int gameHeight = 32*MAP_H;
 Rectangle player = {32.0f, 32.0f, 32.0f, 32.0f};
 int health = 5;
 
-#define COIN_COUNT 15
-Rectangle coins[COIN_COUNT] = {0};
-bool visible[COIN_COUNT] = {0};
+#define COIN_COUNT 140
+Rectangle *coins; //coin rect array pointer. Global for easy access
+bool *visible; //collectable coin check array pointer. Global for easy access
 int points = 0;
-int time_a = 0;       // For animation
 
 Map map;
-int tiles[] = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1,
-    1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1,
-    1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-};
+int *tiles; //pointer to tile array. Declared as global for easy access across all the functions
 
-//setting pause bool
+// Declaring game states
 bool  is_paused = false;
 bool game_running = true;
 bool is_victory = false;
@@ -99,71 +99,14 @@ int main(void){
     Sound hit_sound = LoadSound("assets/oof.mp3");
 
 
-    //sorry but I'm too deep in this to add more functions that will frick it all up
-
-
-    Rectangle frameRecs[12] = {0}; //Rectangles for enemy sprite animation
-    for (int i = 0; i < 12; i++) {  
-        frameRecs[i] = (Rectangle){i * 32, 0, 32, 32};
-    }
-    Rectangle frameRecs2[12] = {0};
-    for (int i = 0; i < 12; i++) {
-    frameRecs2[i] = (Rectangle){i * 32, 0, 32, 32};
-    }
-    Rectangle frameRecs3[12] = {0};
-    for (int i = 0; i < 12; i++) {
-    frameRecs3[i] = (Rectangle){i * 32, 0, 32, 32};
-    }
-    Rectangle frameRecs4[12] = {0};
-    for (int i = 0; i < 12; i++) {
-    frameRecs4[i] = (Rectangle){i * 32, 0, 32, 32};
-    }
-
-    // Declare sprite and starting and target positions for enemy 1
-    Rectangle enemy1 = {32, 320, 32, 32};  // Current position
-    Vector2 enemy1_startPos = {32, 320};        // Starting position
-    Vector2 enemy1_targetPos = {160, 320};       // Target position
-    Vector2 enemy1_currentTarget = enemy1_targetPos;    // Current target position
-    Vector2 enemy1_currentPos = enemy1_startPos;        // Current position
-    Vector2 velocity1 = {0};               // Velocity vector
-
-    // Declare sprite and starting and target positions for enemy 2
-    Rectangle enemy2 = {224, 320, 32, 32}; // Current position
-    Vector2 enemy2_startPos = {224, 320};  // Starting position
-    Vector2 enemy2_targetPos = {224, 224};
-    Vector2 enemy2_currentTarget = enemy2_targetPos;    // Current target position
-    Vector2 enemy2_currentPos = enemy2_startPos;        // Current position
-    Vector2 velocity2 = {0};               // Velocity vector
-
-    // Declare sprite and starting and target positions for enemy 3
-    Rectangle enemy3 = {416, 96, 32, 32}; // Current position
-    Vector2 enemy3_startPos = {416, 96};  // Starting position
-    Vector2 enemy3_targetPos = {544, 96};
-    Vector2 enemy3_currentTarget = enemy3_targetPos;    // Current target position
-    Vector2 enemy3_currentPos = enemy3_startPos;        // Current position
-    Vector2 velocity3 = {0};               // Velocity vector
-
-    // Declare sprite and starting and target positions for enemy 4
-    Rectangle enemy4 = {544, 160, 32, 32}; // Current position
-    Vector2 enemy4_startPos = {544, 160};  // Starting position
-    Vector2 enemy4_targetPos = {416, 160};
-    Vector2 enemy4_currentTarget = enemy4_targetPos;    // Current target position
-    Vector2 enemy4_currentPos = enemy4_startPos;        // Current position
-    Vector2 velocity4 = {0};               // Velocity vector
-
+    Enemy enemies[4];
+    Vector2 enemy_start_positions[4] = {{32, 320}, {224, 320}, {416, 96}, {544, 160}};
+    Vector2 enemy_target_positions[4] = {{160, 320}, {224, 224}, {544, 96}, {416, 160}};
     const float speed = 2.0f;
-    // Calculate velocity vector required to move from current position to target position
-    float distance1 = Vector2Distance(enemy1_currentPos, enemy1_currentTarget);
-    velocity1 = Vector2Scale(Vector2Subtract(enemy1_currentTarget, enemy1_currentPos), speed/distance1);
 
-    float distance2 = Vector2Distance(enemy2_currentPos, enemy2_currentTarget);
-    velocity2 = Vector2Scale(Vector2Subtract(enemy2_currentTarget, enemy2_currentPos), speed/distance2);
-
-    float distance3 = Vector2Distance(enemy3_currentPos, enemy3_currentTarget);
-    velocity3 = Vector2Scale(Vector2Subtract(enemy3_currentTarget, enemy3_currentPos), speed/distance3);
-
-    float distance4 = Vector2Distance(enemy4_currentPos, enemy4_currentTarget);
-    velocity4 = Vector2Scale(Vector2Subtract(enemy4_currentTarget, enemy4_currentPos), speed/distance4);
+    for (int i = 0; i < 4; i++) {
+        InitializeEnemy(&enemies[i], enemy_start_positions[i], enemy_target_positions[i]);
+    }
 
     // Set up timer for sprite animation
     double frameTime = 0.0;
@@ -184,81 +127,39 @@ int main(void){
         if(!is_paused){
             
             GameUpdate();
-            // Update enemy position
-            enemy1.x += velocity1.x;
-            enemy1.y = enemy1_currentPos.y; // Set y-coordinate to a fixed value
-
-            enemy2.x = enemy2_currentPos.x; // Set x-coordinate to a fixed value
-            enemy2.y += velocity2.y; 
-
-            enemy3.x += velocity3.x;
-            enemy3.y = enemy3_currentPos.y; // Set y-coordinate to a fixed value
-
-            enemy4.x += velocity4.x;
-            enemy4.y = enemy4_currentPos.y; // Set y-coordinate to a fixed value
-
             // Update sprite animation frame
             frameTime += GetFrameTime();
             if (frameTime >= animSpeed) {
             frameTime = 0.0;
             currentFrame = (currentFrame + 1) % 12;
             }
+
+            for (int i = 0; i < 4; i++) {
+                UpdateEnemy(&enemies[i], speed);
+                DrawEnemy(&enemies[i], enemy_texture, currentFrame);
+            }
         }
 
         GameDraw(&wall);
-
-        if(!is_paused){
-            DrawTextureRec(enemy_texture, frameRecs[currentFrame], (Vector2){enemy1.x, enemy1.y}, RAYWHITE);
-            DrawTextureRec(enemy_texture, frameRecs2[currentFrame], (Vector2){enemy2.x, enemy2.y}, RAYWHITE);
-            DrawTextureRec(enemy_texture, frameRecs3[currentFrame], (Vector2){enemy3.x, enemy3.y}, RAYWHITE);
-            DrawTextureRec(enemy_texture, frameRecs4[currentFrame], (Vector2){enemy4.x, enemy4.y}, RAYWHITE);
-        }
-        // Check if sprite has reached its target position
-        if (!is_paused && Vector2Distance((Vector2){enemy1.x, enemy1.y}, enemy1_currentTarget) < speed / 2) // checking with speed/2 instead of speed to make sure it doesnt go off the tile box.
-        {
-            enemy1.x = enemy1_currentTarget.x;
-            enemy1_currentPos = enemy1_currentTarget;
-            enemy1_currentTarget = (enemy1_currentTarget.x == enemy1_targetPos.x) ? enemy1_startPos : enemy1_targetPos; // Toggle target position
-            distance1 = Vector2Distance(enemy1_currentPos, enemy1_currentTarget);
-            velocity1 = Vector2Scale(Vector2Subtract(enemy1_currentTarget, enemy1_currentPos), speed/distance1);
-        }
-        if (!is_paused && Vector2Distance((Vector2){enemy2.x, enemy2.y}, enemy2_currentTarget) < speed / 2) {
-            enemy2.y = enemy2_currentTarget.y;
-            enemy2_currentPos = enemy2_currentTarget;
-            enemy2_currentTarget = (enemy2_currentTarget.y == enemy2_targetPos.y) ? enemy2_startPos : enemy2_targetPos; // Toggle target position
-            distance2 = Vector2Distance(enemy2_currentPos, enemy2_currentTarget);
-            velocity2 = Vector2Scale(Vector2Subtract(enemy2_currentTarget, enemy2_currentPos), speed/distance2);
-        }
-        if (!is_paused && Vector2Distance((Vector2){enemy3.x, enemy3.y}, enemy3_currentTarget) < speed / 2) {
-            enemy3.x = enemy3_currentTarget.x;
-            enemy3_currentPos = enemy3_currentTarget;
-            enemy3_currentTarget = (enemy3_currentTarget.x == enemy3_targetPos.x) ? enemy3_startPos : enemy3_targetPos; // Toggle target position
-            distance3 = Vector2Distance(enemy3_currentPos, enemy3_currentTarget);
-            velocity3 = Vector2Scale(Vector2Subtract(enemy3_currentTarget, enemy3_currentPos), speed/distance3);
-        }
-        if (!is_paused && Vector2Distance((Vector2){enemy4.x, enemy4.y}, enemy4_currentTarget) < speed / 2) {
-            enemy4.x = enemy4_currentTarget.x;
-            enemy4_currentPos = enemy4_currentTarget;
-            enemy4_currentTarget = (enemy4_currentTarget.x == enemy4_targetPos.x) ? enemy4_startPos : enemy4_targetPos; // Toggle target position
-            distance4 = Vector2Distance(enemy4_currentPos, enemy4_currentTarget);
-            velocity4 = Vector2Scale(Vector2Subtract(enemy4_currentTarget, enemy4_currentPos), speed/distance4);
-        }
-        //Check player rectangle collision between the player and enemy1 2 3
-        if(!is_paused && CheckCollisionRecs(player, enemy1) || CheckCollisionRecs(player, enemy2) || CheckCollisionRecs(player, enemy3) || CheckCollisionRecs(player, enemy4)){
-           if (!isCooldownActive) {
-            health -= 1;
-            PlaySound(hit_sound);
-            isCooldownActive = true;
-            cooldownTimer = cooldownDuration;
+        // Collision check and handling
+        for (int i = 0; i < 4; i++) {
+            if (!is_paused && CheckCollisionRecs(player, enemies[i].rect)) {
+                if (!isCooldownActive) {
+                    health -= 1;
+                    PlaySound(hit_sound);
+                    isCooldownActive = true;
+                    cooldownTimer = cooldownDuration;
+                }
+                DrawRectangle((int)player.x, (int)player.y, (int)player.width, (int)player.height, RED);
             }
-            DrawRectangle((int)player.x, (int)player.y, (int)player.width, (int)player.height, RED);
         }
+
         if (isCooldownActive) {
             cooldownTimer -= GetFrameTime();
 
             // Check if the cooldown duration has elapsed
             if (cooldownTimer <= 0.0f) {
-            isCooldownActive = false;
+                isCooldownActive = false;
             }
         }
     }
@@ -414,7 +315,7 @@ void VictoryScreen() {
 }
 
 void GameOverScreen(){
-    Music gameover_music = LoadMusicStream("assets/gameover.mp3");
+    Music gameover_music = LoadMusicStream("assets/game_over.mp3");
     PlayMusicStream(gameover_music);    
     const char *text;
     text = TextFormat("Your Score was: %d", points);
@@ -466,16 +367,77 @@ void GameInit() {
     map.width = MAP_W;
     map.height = MAP_H;
     map.cell_size = 32;
+    
+    //inittializing tiles array
+    tiles = malloc(MAP_W * MAP_H * sizeof(int)); 
+    if (tiles == NULL) {
+        // Handle error
+        printf("tile array is NULL\n");
+    } else {
+        int initial_tiles[] = {
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1,
+        1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1,
+        1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+        };
+        for(int i = 0; i < MAP_W * MAP_H; i++) {
+            tiles[i] = initial_tiles[i];
+        }
+    }
+
     map.cell = tiles;
-    //to ensure scores, health, coin and player are set to original positions when program starts
+
+    //initializing coins array
+    coins = malloc(sizeof(Rectangle) * COIN_COUNT);
+    if (coins == NULL) {
+        // Handle error
+        printf("Coin array is NULL\n");
+    } else {
+        Rectangle initial_coins[] = {0};
+        for(int i = 0;i < COIN_COUNT;i++){
+            coins[i] = initial_coins[i];
+        }
+    }
+
+    //initializing visible array
+    visible = malloc(sizeof(bool) * COIN_COUNT);
+    if(visible == NULL){
+        printf("visible array is NULL\n");
+    } else {
+        bool initial_visible[] = {0};
+        for(int i = 0;i < COIN_COUNT;i++){
+            visible[i] = initial_visible[i];
+        }
+    }
+  
+    // to ensure scores, health, coin and player are set to original positions when program starts
     Reset();
+}
+
+void InitializeEnemy(Enemy* enemy, Vector2 startPos, Vector2 targetPos) {
+    enemy->startPos = startPos;
+    enemy->targetPos = targetPos;
+    enemy->currentTarget = targetPos;
+    enemy->currentPos = startPos;
+    enemy->rect = (Rectangle){startPos.x, startPos.y, 32, 32};
+    
+    for (int i = 0; i < 12; i++) {  
+        enemy->frameRec[i] = (Rectangle){i * 32, 0, 32, 32};
+    }
 }
 
 void Reset(){
     const float size = 32.0f;
     player = (Rectangle){size , size , size, size};
     points = 0;
-    time_a = 0;
     health = 5;
 
     // Place coins on empty tiles
@@ -497,7 +459,6 @@ void GameUpdate(){
     UpdatePlayer();
     UpdateCoin();
     if(!is_victory) {
-        // game logic
         if(IsKeyPressed(KEY_ESCAPE)) {
             is_paused = !is_paused;
         }
@@ -552,10 +513,31 @@ void UpdateCoin(){
             }
         }
     }
-    
-    if (IsKeyPressed(KEY_ENTER)){
-        Reset();
+}
+
+void UpdateEnemy(Enemy* enemy, const float speed) {
+    // Calculate distance to the current target
+    float distance = Vector2Distance(enemy->currentPos, enemy->currentTarget);
+
+    // If the enemy is very close to the target, consider it has reached the target
+    if (distance < speed) {
+        // Switch the target to the opposite point (if the target was startPos, make it targetPos, and vice versa)
+        if (Vector2Distance(enemy->currentTarget, enemy->startPos) < speed) {
+            enemy->currentTarget = enemy->targetPos;
+        } else {
+            enemy->currentTarget = enemy->startPos;
+        }
+        // Recalculate distance for the new target
+        distance = Vector2Distance(enemy->currentPos, enemy->currentTarget);
     }
+
+    // Update velocity and position
+    enemy->velocity = Vector2Scale(Vector2Subtract(enemy->currentTarget, enemy->currentPos), speed / distance);
+    enemy->currentPos = Vector2Add(enemy->currentPos, enemy->velocity);
+
+    // Update enemy rect position to match currentPos
+    enemy->rect.x = enemy->currentPos.x;
+    enemy->rect.y = enemy->currentPos.y;
 }
 
 void GameDraw(Texture2D *wall)
@@ -604,7 +586,7 @@ void DrawTileMap(Texture2D* wallTexture)
                 float cellX = map.cell_size * col;
                 float cellY = map.cell_size * row;
 
-                Rectangle destinationRect = { (int)cellX, (int)cellY, map.cell_size, map.cell_size }; //if no texture you dont need tis just call DrawRec() and you can draw solid color rectangle.
+                Rectangle destinationRect = { (int)cellX, (int)cellY, map.cell_size, map.cell_size }; //if no texture you dont need this just call DrawRec() and you can draw solid color rectangle.
                 DrawTextureRec(*wallTexture, destinationRect, (Vector2){ cellX, cellY }, WHITE);
             }
         }
@@ -664,17 +646,14 @@ void DrawPlayer() {
     }
 }
 
-
 void DrawCoins(){
-    time_a += 1;
-
     for (int j = 0; j < COIN_COUNT; j++) {
         if (visible[j]) {
             Rectangle coin = coins[j];
             int index = (int)(coin.y / map.cell_size) * MAP_W + (int)(coin.x / map.cell_size);//just another way of calculating index through 1D map array
             if (tiles[index] == 0) {
-                float x = (float)((index % MAP_W) * map.cell_size); //to get column, multiply by cell size to get x position
-                float y = (float)((index / MAP_W) * map.cell_size); //to get row, multiply by cell size to get y position
+                float x = (float)((index % MAP_W) * map.cell_size); //to get COLUMN, multiply by cell size to get x position
+                float y = (float)((index / MAP_W) * map.cell_size); //to get ROW, multiply by cell size to get y position
 
                 float coin_x = x + map.cell_size / 2 - coin.width / 2; //to draw the coin rectangle relatively at the center of the cell
                 float coin_y = y + map.cell_size / 2 - coin.height / 2;
@@ -695,6 +674,10 @@ void DrawScoreText(){
 
     DrawText(text, x, y, size, BLACK);
     
+}
+
+void DrawEnemy(Enemy* enemy, Texture2D enemy_texture, int currentFrame) {
+    DrawTextureRec(enemy_texture, enemy->frameRec[currentFrame], (Vector2){enemy->rect.x, enemy->rect.y}, RAYWHITE);
 }
 
 void DrawHealthText()
@@ -733,7 +716,7 @@ RectList* RectangleListFromTiles(Rectangle* boundingRect, Map* map)
 //this list is used with the function below to calculate collision detection check
 //Normal CheckCollisionRec() wont work for if you just check what one tile the player is currently colliding as it can be collided with many tiles at the same time
 {
-    // Calculate the relative coordinates and dimensions of the bounding rectangle
+    // Calculate the relative coordinates and dimensions of the bounding rectangle123
     float relativeX = boundingRect->x; 
     float relativeY = boundingRect->y; 
     float relativeWidth = boundingRect->x + boundingRect->width; //x boundary or width 
@@ -752,7 +735,8 @@ RectList* RectangleListFromTiles(Rectangle* boundingRect, Map* map)
 
     // Iterate through the tiles within the specified bounding rectangle
     for (int y = startTileY; y < startTileY + numTilesY; y++) {
-        if (y >= 0 && y < map->height) {
+        if (y >= 0 && y < map->height)//makes sure it is not outta bound.
+        {
             for (int x = startTileX; x < startTileX + numTilesX; x++) {
                 if (x >= 0 && x < map->width) {
                     // Get the tile index from the map's cell array
@@ -805,7 +789,7 @@ void ResolveRectangleTileCollision(Rectangle* playerRect, Vector2* playerVelocit
             }
         }
     }
-    // set futurePlayerRect to X position
+    // set futurePlayerRect on X position
     futurePlayerRect.x = playerRect->x + playerVelocity->x;
     // set futurePlayerRect on Y position
     futurePlayerRect.y += playerVelocity->y;
